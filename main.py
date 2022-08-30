@@ -9,6 +9,24 @@ UP, LEFT, RIGHT, DOWN = (0, -1), (-1, 0), (1, 0), (0, 1)
 clock = pygame.time.Clock()
 
 
+class Hitbox:
+    def __init__(self, width, height, x=0, y=0):
+        self.hitbox = pygame.Rect(x, y, width, height)
+
+    @classmethod
+    def test_collision(rect1: pygame.Rect, rect2: pygame.Rect) -> bool:
+        return rect1.colliderect(rect2)
+
+    def colided(self, hitbox_object, /) -> bool:
+        return self.hitbox.colliderect(hitbox_object.hitbox)
+
+    def collisions(self, hitboxes: list[pygame.Rect]) -> list[pygame.Rect]:
+        return [hitbox for hitbox in hitboxes if self.hitbox.colliderect(hitbox)]
+
+    def __repr__(self):
+        return "Hitbox{" + str(self.hitbox) + "}"
+
+
 class Food:
     x: int = 0
     y: int = 0
@@ -17,6 +35,11 @@ class Food:
     def __init__(self, x: int, y: int, *, size: (int, int)):
         self.x, self.y = x, y
         self.size = size
+        self.hitbox = Hitbox(*size, self.x, self.y)
+
+    def change_pos(self, x: int, y: int):
+        self.x = self.hitbox.hitbox.x = x
+        self.y = self.hitbox.hitbox.y = y
 
     # function to draw food
     def draw(self, surface, image):
@@ -195,6 +218,7 @@ class Player:
         self.snake_body_image = self.SNAKE_BODY_IMAGE
         self.SNAKE_HEAD_IMAGE = pygame.image.load("Assets/Textures/snake-head.png")
         self.snake_head_image = self.SNAKE_HEAD_IMAGE
+        self.hitbox = Hitbox(*self.SNAKE_HEAD_IMAGE.get_size())
         self.border = border
         self.animation = GrowingAnimation(self, self.border)
 
@@ -246,6 +270,9 @@ class Player:
         self.x.appendleft(self.x[0] + movement[0])
         self.y.appendleft(self.y[0] + movement[1])
 
+    def pre_processing(self):
+        self.hitbox.hitbox.x, self.hitbox.hitbox.y = self.x[0], self.y[0]
+
     def move(self, direction):
         if direction not in (UP, DOWN, LEFT, RIGHT):
             raise ValueError(
@@ -271,7 +298,9 @@ class Game:
         self.eat_sound = pygame.mixer.Sound("Assets/SFX/eat-sound.wav")
         self.grow_sound = pygame.mixer.Sound("Assets/SFX/grow-sound.wav")
 
-    def test_collision(self, x1, y1, x2, y2):
+    def old_test_collision(self, x1, y1, x2, y2):
+        # TODO update to new one
+        # ? or not
         return x1 == x2 and y1 == y2
 
 
@@ -311,10 +340,12 @@ class App:
         self.food_images = [
             pygame.image.load("Assets/Textures/small-food.png"),
             pygame.image.load("Assets/Textures/medium-food.png"),
+            pygame.image.load("Assets/Textures/large-food.png"),
         ]
         self.food_sizes = [
             (8, 8),
             (16, 16),
+            (32, 32),
         ]
 
         self.generate_food()
@@ -338,6 +369,15 @@ class App:
     def draw(self):
         self._display_surf.fill((255, 255, 255))
         for food, food_image in zip(self.food, self.food_images):
+            if food.size[0] > 16 or food.size[1] > 16:
+                food_image = pygame.transform.scale(
+                    food_image,
+                    (
+                        food.size[0],
+                        food.size[1],
+                    ),
+                )
+
             food.draw(self._display_surf, food_image)
         self.player.draw(
             self._display_surf,
@@ -374,6 +414,8 @@ class App:
         pygame.mixer.Channel(0).play(self.game.background_music, loops=-1)
         pygame.mixer.Channel(0).set_volume(0.01)
         while True:
+            self.player.pre_processing()
+            print(self.player.hitbox)
             events = pygame.event.get()
             for event in events:
                 if event.type == QUIT:
@@ -395,24 +437,28 @@ class App:
                 continue
             if self.player.animation.reset_food:
                 for food in self.food:
-                    food.x, food.y = self.calculate_food_position(
-                        self.border.top_left, self.border.bottom_right
+                    food.change_pos(
+                        *self.calculate_food_position(
+                            self.border.top_left, self.border.bottom_right
+                        )
                     )
                 self.player.animation.reset_food = False
 
             # test if eating food 🍔
             for food in self.food:
-                collided = self.game.test_collision(
-                    self.player.x[0], self.player.y[0], food.x, food.y
-                )
-                if collided:
-                    pygame.mixer.Channel(1).play(self.game.eat_sound)
-                    pygame.mixer.Channel(1).set_volume(0.01)
-                    food.x, food.y = self.calculate_food_position(
+                if not self.player.hitbox.colided(food.hitbox):
+                    continue
+                if food.size[0] > 16 or food.size[1] > 16:
+                    self.player.bumped = True
+                pygame.mixer.Channel(1).play(self.game.eat_sound)
+                pygame.mixer.Channel(1).set_volume(0.01)
+                food.change_pos(
+                    *self.calculate_food_position(
                         self.border.top_left, self.border.bottom_right
                     )
+                )
 
-                    self.player.length += self.player.length_step
+                self.player.length += self.player.length_step
 
             self.player.update()
 
@@ -430,7 +476,7 @@ class App:
 
             # check to see if snake collides with itself
             for i in range(2, self.player.length - 1):
-                if self.game.test_collision(
+                if self.game.old_test_collision(
                     self.player.x[0],
                     self.player.y[0],
                     self.player.x[i],
@@ -454,10 +500,13 @@ class App:
                 for enum_food_images, food in zip(
                     enumerate(food_images_copy), food_copy
                 ):
+                    original_food_size = food.size
                     food.size = (
                         food.size[0] // self.player.size,
                         food.size[1] // self.player.size,
                     )
+                    if original_food_size[0] > 16 and original_food_size[1] > 16:
+                        continue
                     i, food_image = enum_food_images
                     i -= deleted_count
                     food_image_size = food_image.get_size()
@@ -476,6 +525,7 @@ class App:
 
                 pygame.mixer.Channel(1).play(self.game.grow_sound)
                 self.player.animation.playing = True
+            print(self.food)
             self.tick()
 
 
