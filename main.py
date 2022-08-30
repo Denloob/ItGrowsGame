@@ -10,22 +10,20 @@ clock = pygame.time.Clock()
 
 
 class Food:
-    x = 0
-    y = 0
-    texture_size = 0
+    x: int = 0
+    y: int = 0
+    size: (int, int) = 0
 
-    def __init__(self, x, y, *, texture_size):
+    def __init__(self, x: int, y: int, *, size: (int, int)):
         self.x, self.y = x, y
-        self.texture_size = texture_size
+        self.size = size
 
     # function to draw food
     def draw(self, surface, image):
         surface.blit(image, (self.x, self.y))
 
     def __repr__(self):
-        return (
-            "Food{" + f"x={self.x}, y={self.y}, texture_size={self.texture_size}" + "}"
-        )
+        return "Food{" + f"x={self.x}, y={self.y}, size={self.size}" + "}"
 
 
 class Animation:
@@ -35,6 +33,10 @@ class Animation:
 
 
 class GrowingAnimation(Animation):
+    zoom_out = False
+    can_zoom_out = False
+    reset_food = False
+
     def __init__(self, player, border):
         self.player = player
         self.border = border
@@ -46,16 +48,24 @@ class GrowingAnimation(Animation):
         if self.tick > 20:
             self.tick = 0
             self.playing = False
+            self.zoom_out = False
+            self.can_zoom_out = False
+            self.reset_food = True
             # the playing flag will effect the animation next tick
             return True
         if self.tick == 0:
             self.counter = 0
+            self.reset_food = False
 
         default_snake_size = self.player.SNAKE_BODY_IMAGE.get_size()
 
+        if self.tick > 15 and not self.can_zoom_out and not self.zoom_out:
+            self.can_zoom_out = True
+
         stop_snake_movement = False
-        if self.tick > 15:
-            self.border.shrink_border(1)
+        # size animation calculation
+        if self.tick > 15 and self.zoom_out:
+            self.border.shrink_border(self.player.movment_speed / 5)
             new_snake_size = (
                 default_snake_size[0],
                 default_snake_size[1],
@@ -90,7 +100,8 @@ class GrowingAnimation(Animation):
             default_body_image=snake_body_image,
             default_head_image=snake_head_image,
         )
-
+        if self.can_zoom_out and not self.zoom_out:
+            return False
         self.tick += 1
         self.counter += 1
 
@@ -154,6 +165,7 @@ class Player:
     snake_body_image = None
     SNAKE_HEAD_IMAGE = None
     snake_head_image = None
+    bumped = False
 
     def __init__(
         self,
@@ -300,20 +312,23 @@ class App:
             pygame.image.load("Assets/Textures/small-food.png"),
             pygame.image.load("Assets/Textures/medium-food.png"),
         ]
-        self.food_images_sizes = [
+        self.food_sizes = [
             (8, 8),
             (16, 16),
         ]
 
+        self.generate_food()
+
+    def generate_food(self):
         # create food {len(food_images)} times
         self.food = [
             Food(
                 *self.calculate_food_position(
                     self.border.top_left, self.border.bottom_right
                 ),
-                texture_size=size,
+                size=size,
             )
-            for _, size in zip(self.food_images, self.food_images_sizes)
+            for _, size in zip(self.food_images, self.food_sizes)
         ]
 
     def game_over(self):
@@ -338,13 +353,13 @@ class App:
     def calculate_food_position(self, pt1, pt2):
         return (
             random.randint(
-                (pt1[0] // self.player.movment_speed) - 1,
+                (pt1[0] // self.player.movment_speed),
                 (pt2[0] // self.player.movment_speed) - 1,
             )
             * self.player.movment_speed
         ), (
             random.randint(
-                (pt1[1] // self.player.movment_speed) - 1,
+                (pt1[1] // self.player.movment_speed),
                 (pt2[1] // self.player.movment_speed) - 1,
             )
             * self.player.movment_speed
@@ -353,7 +368,6 @@ class App:
     def tick(self):
         self.draw()
         clock.tick(self.fps)
-        print(clock.get_fps())
 
     def run(self):
         self.player.rotate_snake_texture(-90)
@@ -373,13 +387,19 @@ class App:
                         self.player.rotate_snake_texture(0)
                     elif event.key == K_DOWN and self.player.move(DOWN):
                         self.player.rotate_snake_texture(180)
-                    else:
-                        continue
-                    break
+                    elif event.key == K_z and self.player.animation.can_zoom_out:
+                        self.player.animation.zoom_out = True
             # jump to next game tick skipping all the game logic if the animation returned True
             if self.player.animation.play():
                 self.tick()
                 continue
+            if self.player.animation.reset_food:
+                for food in self.food:
+                    food.x, food.y = self.calculate_food_position(
+                        self.border.top_left, self.border.bottom_right
+                    )
+                self.player.animation.reset_food = False
+
             # test if eating food 🍔
             for food in self.food:
                 collided = self.game.test_collision(
@@ -397,12 +417,15 @@ class App:
             self.player.update()
 
             # if hits the wall
-            if (
-                self.player.x[0] < 0
-                or self.player.x[0] > DISPLAY_SIZE[0] - self.player.movment_speed
-                or self.player.y[0] < 0
-                or self.player.y[0] > DISPLAY_SIZE[1] - self.player.movment_speed
-            ):
+            self.player.bumped = self.player.bumped or (
+                self.player.x[0] < self.border.top_left[0]
+                or self.player.x[0]
+                > self.border.top_right[0] - self.player.movment_speed
+                or self.player.y[0] < self.border.top_left[1]
+                or self.player.y[0]
+                > self.border.bottom_left[1] - self.player.movment_speed
+            )
+            if self.player.bumped:
                 self.game_over()
 
             # check to see if snake collides with itself
@@ -431,6 +454,10 @@ class App:
                 for enum_food_images, food in zip(
                     enumerate(food_images_copy), food_copy
                 ):
+                    food.size = (
+                        food.size[0] // self.player.size,
+                        food.size[1] // self.player.size,
+                    )
                     i, food_image = enum_food_images
                     i -= deleted_count
                     food_image_size = food_image.get_size()
@@ -441,16 +468,11 @@ class App:
                             food_image_size[1] // self.player.size,
                         ),
                     )
-                    food.texture_size = (
-                        food.texture_size[0] // self.player.size,
-                        food.texture_size[1] // self.player.size,
-                    )
 
-                    if food.texture_size[0] < 2 or food.texture_size[1] < 2:
+                    if food.size[0] < 2 or food.size[1] < 2:
                         self.food_images.pop(i)
                         self.food.pop(i)
                         deleted_count += 1
-                        continue
 
                 pygame.mixer.Channel(1).play(self.game.grow_sound)
                 self.player.animation.playing = True
