@@ -272,8 +272,7 @@ class Player:
         # head position handling
         self.x.appendleft(self.x[0] + movement[0])
         self.y.appendleft(self.y[0] + movement[1])
-
-    def pre_processing(self):
+        # update the hitbox
         self.hitbox.hitbox.x, self.hitbox.hitbox.y = self.x[0], self.y[0]
 
     def move(self, direction):
@@ -419,7 +418,6 @@ class App:
         pygame.mixer.Channel(0).play(self.game.background_music, loops=-1)
         pygame.mixer.Channel(0).set_volume(0.01)
         while True:
-            self.player.pre_processing()
             print(self.player.hitbox)
             events = pygame.event.get()
             for event in events:
