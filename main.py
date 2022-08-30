@@ -23,6 +23,9 @@ class Hitbox:
     def collisions(self, hitboxes: list[pygame.Rect]) -> list[pygame.Rect]:
         return [hitbox for hitbox in hitboxes if self.hitbox.colliderect(hitbox)]
 
+    def show(self, display, *, color=(0, 0, 0), width=3):
+        pygame.draw.rect(display, color, self.hitbox, width)
+
     def __repr__(self):
         return "Hitbox{" + str(self.hitbox) + "}"
 
@@ -379,12 +382,14 @@ class App:
                 )
 
             food.draw(self._display_surf, food_image)
+            food.hitbox.show(self._display_surf)
         self.player.draw(
             self._display_surf,
             body_image=self.player.snake_body_image,
             head_image=self.player.snake_head_image,
         )
         self.border.draw(self._display_surf)
+        self.player.hitbox.show(self._display_surf)
         self._screen.blit(
             pygame.transform.scale(self._display_surf, WINDOW_SIZE), (0, 0)
         )
