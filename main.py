@@ -443,6 +443,45 @@ class App:
                 self.tick()
                 continue
             if self.player.animation.reset_food:
+                if self.player.size > self.player.last_size:
+                    self.player.last_size = self.player.size
+                self.player.snake_body_image = pygame.transform.rotate(
+                    self.player.SNAKE_BODY_IMAGE, -90
+                )
+                self.player.snake_head_image = pygame.transform.rotate(
+                    self.player.SNAKE_HEAD_IMAGE, -90
+                )
+
+                # we scale the food size down which will make the illusion of getting bigger
+                food_images_copy = self.food_images.copy()
+                food_copy = self.food.copy()
+                deleted_count = 0
+                for enum_food_images, food in zip(
+                    enumerate(food_images_copy), food_copy
+                ):
+                    original_food_size = food.size
+                    food.size = (
+                        food.size[0] // self.player.size,
+                        food.size[1] // self.player.size,
+                    )
+                    if original_food_size[0] > 16 and original_food_size[1] > 16:
+                        continue
+                    i, food_image = enum_food_images
+                    i -= deleted_count
+                    food_image_size = food_image.get_size()
+                    self.food_images[i] = pygame.transform.scale(
+                        food_image,
+                        (
+                            food_image_size[0] // self.player.size,
+                            food_image_size[1] // self.player.size,
+                        ),
+                    )
+
+                    if food.size[0] < 2 or food.size[1] < 2:
+                        self.food_images.pop(i)
+                        self.food.pop(i)
+                        deleted_count += 1
+
                 for food in self.food:
                     food.change_pos(
                         *self.calculate_food_position(
@@ -501,42 +540,8 @@ class App:
                     self.player.SNAKE_HEAD_IMAGE, -90
                 )
 
-                # we scale the food size down which will make the illusion of getting bigger
-                food_images_copy = self.food_images.copy()
-                food_copy = self.food.copy()
-                deleted_count = 0
-                for enum_food_images, food in zip(
-                    enumerate(food_images_copy), food_copy
-                ):
-                    original_food_size = food.size
-                    food.size = (
-                        food.size[0] // self.player.size,
-                        food.size[1] // self.player.size,
-                    )
-                    if original_food_size[0] > 16 and original_food_size[1] > 16:
-                        continue
-                    i, food_image = enum_food_images
-                    i -= deleted_count
-                    food_image_size = food_image.get_size()
-                    self.food_images[i] = pygame.transform.scale(
-                        food_image,
-                        (
-                            food_image_size[0] // self.player.size,
-                            food_image_size[1] // self.player.size,
-                        ),
-                    )
-
-                    if food.size[0] < 2 or food.size[1] < 2:
-                        self.food_images.pop(i)
-                        self.food.pop(i)
-                        deleted_count += 1
-
                 pygame.mixer.Channel(1).play(self.game.grow_sound)
                 self.player.animation.playing = True
-                for food in self.food:
-                    print(food.hitbox, food.size)
-                    food.hitbox = Hitbox(*food.size, food.x, food.y)
-                    print(food.hitbox, food.size)
             self.tick()
 
 
