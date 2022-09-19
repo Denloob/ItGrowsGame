@@ -116,6 +116,9 @@ class GrowingAnimation(Animation):
                 self.player.SNAKE_HEAD_IMAGE,
                 new_snake_size,
             )
+            self.player.hitbox = Hitbox(
+                *new_snake_size, self.player.x[0], self.player.y[0]
+            )
         else:
             if self.counter == 4:
                 self.counter = 0
@@ -361,7 +364,9 @@ class App:
                 ),
                 size=size,
             )
-            for _, size in zip(self.food_images, self.food_sizes)
+            for _, size in zip(
+                self.food_images, self.food_sizes
+            )  # ? why is food_images zipped but is never used?
         ]
 
     def game_over(self):
@@ -418,7 +423,6 @@ class App:
         pygame.mixer.Channel(0).play(self.game.background_music, loops=-1)
         pygame.mixer.Channel(0).set_volume(0.01)
         while True:
-            print(self.player.hitbox)
             events = pygame.event.get()
             for event in events:
                 if event.type == QUIT:
@@ -445,6 +449,7 @@ class App:
                             self.border.top_left, self.border.bottom_right
                         )
                     )
+                    food.hitbox = Hitbox(*food.size, food.x, food.y)
                 self.player.animation.reset_food = False
 
             # test if eating food 🍔
@@ -528,7 +533,10 @@ class App:
 
                 pygame.mixer.Channel(1).play(self.game.grow_sound)
                 self.player.animation.playing = True
-            print(self.food)
+                for food in self.food:
+                    print(food.hitbox, food.size)
+                    food.hitbox = Hitbox(*food.size, food.x, food.y)
+                    print(food.hitbox, food.size)
             self.tick()
 
 
