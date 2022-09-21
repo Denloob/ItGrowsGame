@@ -34,6 +34,7 @@ class Food:
     x: int = 0
     y: int = 0
     size: (int, int) = 0
+    move_scheduled: tuple[int] = ()
 
     def __init__(self, x: int, y: int, *, size: (int, int)):
         self.x, self.y = x, y
@@ -61,7 +62,8 @@ class Animation:
 class GrowingAnimation(Animation):
     zoom_out = False
     can_zoom_out = False
-    reset_food = False
+    border_shrink_end = False
+    border_shrinking = False
 
     def __init__(self, player, border):
         self.player = player
@@ -70,18 +72,18 @@ class GrowingAnimation(Animation):
     def play(self):
         if not self.playing:
             return False
-
+        # the tick is stopped from incrementing at 16 until (self.can_zoom_out and not self.zoom_out) == False
         if self.tick > 20:
             self.tick = 0
             self.playing = False
             self.zoom_out = False
             self.can_zoom_out = False
-            self.reset_food = True
+            self.border_shrink_end = True
+            self.border_shrinking = False
             # the playing flag will effect the animation next tick
             return True
         if self.tick == 0:
             self.counter = 0
-            self.reset_food = False
 
         default_snake_size = self.player.SNAKE_BODY_IMAGE.get_size()
 
@@ -91,6 +93,7 @@ class GrowingAnimation(Animation):
         stop_snake_movement = False
         # size animation calculation
         if self.tick > 15 and self.zoom_out:
+            self.border_shrinking = True
             self.border.shrink_border(self.player.movment_speed / 5)
             new_snake_size = (
                 default_snake_size[0],
@@ -153,6 +156,25 @@ class Border:
         self.bottom_right = self.add_cord(
             self.bottom_right, cord_tuple2=(-factor, -factor)
         )
+
+    def is_outside_border(self, x, y, width, height, return_direction=False):
+        if not return_direction:
+            return (
+                x < self.top_left[0]
+                or x > self.top_right[0] - width
+                or y < self.top_left[1]
+                or y > self.bottom_left[1] - height
+            )
+
+        direction = [0, 0]
+
+        direction[0] -= x < self.top_left[0]
+        direction[0] += x > self.top_right[0] - width
+
+        direction[1] -= y < self.top_left[1]
+        direction[1] += y > self.bottom_left[1] - height
+
+        return tuple(direction) if any(direction) else False
 
     def draw(self, surface):
         rects = [
@@ -386,14 +408,12 @@ class App:
                 )
 
             food.draw(self._display_surf, food_image)
-            food.hitbox.show(self._display_surf)
         self.player.draw(
             self._display_surf,
             body_image=self.player.snake_body_image,
             head_image=self.player.snake_head_image,
         )
         self.border.draw(self._display_surf)
-        self.player.hitbox.show(self._display_surf)
         self._screen.blit(
             pygame.transform.scale(self._display_surf, WINDOW_SIZE), (0, 0)
         )
@@ -442,7 +462,7 @@ class App:
             if self.player.animation.play():
                 self.tick()
                 continue
-            if self.player.animation.reset_food:
+            if self.player.animation.border_shrink_end:
                 if self.player.size > self.player.last_size:
                     self.player.last_size = self.player.size
                 self.player.snake_body_image = pygame.transform.rotate(
@@ -483,13 +503,33 @@ class App:
                         deleted_count += 1
 
                 for food in self.food:
-                    food.change_pos(
-                        *self.calculate_food_position(
-                            self.border.top_left, self.border.bottom_right
-                        )
-                    )
                     food.hitbox = Hitbox(*food.size, food.x, food.y)
-                self.player.animation.reset_food = False
+
+                self.player.animation.border_shrink_end = False
+
+            if self.player.animation.border_shrinking:
+                for food in self.food:
+                    outside_direction = self.border.is_outside_border(
+                        food.x, food.y, *food.size, return_direction=True
+                    )
+                    if not outside_direction:
+                        continue
+                    food.change_pos(
+                        food.x
+                        if not outside_direction[0]
+                        else (
+                            self.border.top_left[0]
+                            if outside_direction[0] < 0
+                            else self.border.top_right[0] - food.size[0]
+                        ),
+                        food.y
+                        if not outside_direction[1]
+                        else (
+                            self.border.top_left[1]
+                            if outside_direction[1] < 0
+                            else self.border.bottom_left[1] - food.size[1]
+                        ),
+                    )
 
             # test if eating food 🍔
             for food in self.food:
@@ -510,13 +550,11 @@ class App:
             self.player.update()
 
             # if hits the wall
-            self.player.bumped = self.player.bumped or (
-                self.player.x[0] < self.border.top_left[0]
-                or self.player.x[0]
-                > self.border.top_right[0] - self.player.movment_speed
-                or self.player.y[0] < self.border.top_left[1]
-                or self.player.y[0]
-                > self.border.bottom_left[1] - self.player.movment_speed
+            self.player.bumped = self.player.bumped or self.border.is_outside_border(
+                self.player.x[0],
+                self.player.y[0],
+                self.player.movment_speed,
+                self.player.movment_speed,
             )
             if self.player.bumped:
                 self.game_over()
